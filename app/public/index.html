@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>mails.05050101.xyz — Disposable inbox (self-hosted)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; margin: 20px; }
+    input, button { padding: 8px; font-size: 1rem; }
+    .msg { border-bottom: 1px solid #ddd; padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Disposable inbox — mails.05050101.xyz</h1>
+  <p>Create an inbox (localpart) and protect it with a password. Example address: <code>random@mail.05050101.xyz</code></p>
+
+  <div>
+    <input id="localpart" placeholder="localpart (e.g. random123)" style="width:200px" />
+    <input id="password" placeholder="password (min 4 chars)" type="password" style="width:200px" />
+    <button id="create">Create inbox</button>
+    <button id="random">Generate random</button>
+  </div>
+
+  <div style="margin-top:12px">
+    <input id="open_local" placeholder="localpart to open" style="width:200px" />
+    <input id="open_pw" placeholder="password" type="password" style="width:200px" />
+    <button id="open">Open inbox</button>
+  </div>
+
+  <div id="inbox" style="margin-top:18px"></div>
+
+  <script>
+    const domain = 'mail.05050101.xyz';
+
+    document.getElementById('create').addEventListener('click', async ()=>{
+      const lp = (document.getElementById('localpart').value||'').trim();
+      const pw = document.getElementById('password').value||'';
+      if(!lp) return alert('enter localpart');
+      const res = await fetch('/api/create', {
+        method:'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ localpart: lp, password: pw })
+      });
+      const j = await res.json();
+      if(!res.ok) return alert('Error: ' + (j.error||JSON.stringify(j)));
+      alert('Created: ' + j.address);
+    });
+
+    document.getElementById('random').addEventListener('click', ()=>{
+      const r = Math.random().toString(36).slice(2,10);
+      document.getElementById('localpart').value = r;
+      document.getElementById('open_local').value = r;
+    });
+
+    document.getElementById('open').addEventListener('click', ()=>{
+      const lp = document.getElementById('open_local').value||'';
+      const pw = document.getElementById('open_pw').value||'';
+      if(!lp) return alert('enter localpart to open');
+      showList(lp, pw);
+    });
+
+    function showList(localpart, pw) {
+      document.getElementById('inbox').innerHTML = `<h2>Inbox: ${localpart}@${domain}</h2><div id="msgs">Loading…</div>`;
+      fetch('/api/messages/' + encodeURIComponent(localpart), { headers: { 'X-INBOX-PW': pw }})
+        .then(r => r.json())
+        .then(list => {
+          const el = document.getElementById('msgs');
+          if (!list || list.length === 0) { el.innerHTML = '<em>No messages yet</em>'; return; }
+          el.innerHTML = list.map(m => `
+            <div class="msg">
+              <strong>${escapeHtml(m.subject || '(no subject)')}</strong><br/>
+              <small>from ${escapeHtml(m.sender)} — ${escapeHtml(m.created_at)}</small><br/>
+              <a href="#" data-id="${m.id}" onclick="openMsg(event, '${pw}')">Open</a>
+            </div>
+          `).join('');
+        }).catch(e=>{ document.getElementById('msgs').innerHTML = '<em>error</em>'; });
+    }
+
+    function openMsg(ev, pw) {
+      ev.preventDefault();
+      const id = ev.currentTarget.dataset.id;
+      fetch('/api/message/' + id, { headers: { 'X-INBOX-PW': pw }})
+        .then(r=>r.json()).then(m=>{
+        const html = `
+          <h3>${escapeHtml(m.subject || '(no subject)')}</h3>
+          <p><strong>From:</strong> ${escapeHtml(m.sender)}<br/>
+          <strong>To:</strong> ${escapeHtml(m.localpart)}@${domain}<br/>
+          <strong>Date:</strong> ${escapeHtml(m.created_at)}</p>
+          <div>${m.body_html ? m.body_html : '<pre>' + escapeHtml(m.body_text || '') + '</pre>'}</div>
+          ${m.attachments && m.attachments.length ? '<h4>Attachments</h4>' + m.attachments.map(a=>`<div><a href="${a.url}" target="_blank">${escapeHtml(a.originalname)}</a> (${a.size} bytes)</div>`).join('') : ''}
+          <p><a href="#" onclick="history.back();return false;">Back</a></p>
+        `;
+        const inbox = document.getElementById('inbox');
+        inbox.innerHTML = html;
+      });
+    }
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  </script>
+</body>
+</html>

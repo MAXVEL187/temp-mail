@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  app:
+    build: ./app
+    container_name: tempmail_app
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - DB_FILE=/data/mail.db
+      - SMTP_PORT=2525
+    volumes:
+      - ./data:/data
+      - ./app/attachments:/usr/src/app/attachments
+    ports:
+      - "3000:3000"
+      - "2525:2525" # expose SMTP for testing; in production bind to 25 on VPS
